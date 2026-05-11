@@ -1,8 +1,19 @@
 import argparse
+import logging
 import math
 
 from src.data_extractor import DataExtractor
 from src.output_generator import OutputGenerator
+
+
+logger = logging.getLogger(__name__)
+
+
+def configure_logging(log_level):
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format='%(levelname)s:%(name)s:%(message)s',
+    )
 
 
 def build_dataset(
@@ -13,9 +24,15 @@ def build_dataset(
     max_size_mb=30,
     random_state=42,
 ):
+    if reviews_per_stratum <= 0:
+        raise ValueError("reviews_per_stratum must be greater than 0")
+    if max_size_mb <= 0:
+        raise ValueError("max_size_mb must be greater than 0")
+
     current_limit = reviews_per_stratum
 
     while current_limit > 0:
+        logger.info("Building dataset with %s reviews per stratum", current_limit)
         extractor = DataExtractor(
             business_path=business_path,
             review_path=review_path,
@@ -28,6 +45,7 @@ def build_dataset(
         size_bytes = output.write_csv(rows)
 
         if output.is_under_size_limit():
+            logger.info("Output is under the %.2f MB size limit", max_size_mb)
             return {
                 'output_path': str(output.output_path),
                 'row_count': len(rows),
@@ -38,6 +56,12 @@ def build_dataset(
 
         reduction_factor = output.max_size_bytes / size_bytes
         next_limit = max(1, math.floor(current_limit * reduction_factor * 0.98))
+        logger.warning(
+            "Output exceeded %.2f MB; reducing reviews per stratum from %s to %s",
+            max_size_mb,
+            current_limit,
+            next_limit,
+        )
 
         if next_limit >= current_limit:
             next_limit = current_limit - 1
@@ -84,25 +108,37 @@ def parse_args():
         default=42,
         help="Seed for repeatable random sampling",
     )
+    parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help="Minimum logging level to display",
+    )
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    result = build_dataset(
-        business_path=args.businesses,
-        review_path=args.reviews,
-        output_path=args.output,
-        reviews_per_stratum=args.reviews_per_stratum,
-        max_size_mb=args.max_size_mb,
-        random_state=args.random_state,
-    )
+    configure_logging(args.log_level)
 
-    print(
-        f"Wrote {result['row_count']} rows to {result['output_path']} "
-        f"({result['size_mb']:.2f} MB, {result['reviews_per_stratum']} per stratum)."
-    )
+    try:
+        result = build_dataset(
+            business_path=args.businesses,
+            review_path=args.reviews,
+            output_path=args.output,
+            reviews_per_stratum=args.reviews_per_stratum,
+            max_size_mb=args.max_size_mb,
+            random_state=args.random_state,
+        )
+    except Exception:
+        logger.exception("Dataset build failed")
+        raise
+    else:
+        print(
+            f"Wrote {result['row_count']} rows to {result['output_path']} "
+            f"({result['size_mb']:.2f} MB, {result['reviews_per_stratum']} per stratum)."
+        )
 
 
 if __name__ == '__main__':

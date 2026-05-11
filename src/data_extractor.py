@@ -1,8 +1,12 @@
 import json
+import logging
 from pathlib import Path
 
 from src.category_filter import CategoryFilter
 from src.review_balancer import ReservoirReviewBalancer
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataExtractor:
@@ -24,13 +28,42 @@ class DataExtractor:
         self.reviews_per_stratum = reviews_per_stratum
         self.random_state = random_state
         self.category_filter = category_filter or CategoryFilter()
+        self._validate_inputs()
+
+    def _validate_inputs(self):
+        if self.reviews_per_stratum <= 0:
+            raise ValueError("reviews_per_stratum must be greater than 0")
+        if not self.business_path.is_file():
+            raise FileNotFoundError(f"Business data file not found: {self.business_path}")
+        if not self.review_path.is_file():
+            raise FileNotFoundError(f"Review data file not found: {self.review_path}")
+
+    @staticmethod
+    def _require_field(record, field_name, line_number, file_label):
+        if field_name not in record or record[field_name] in (None, ''):
+            raise ValueError(
+                f"Missing required field '{field_name}' in {file_label} JSON on line {line_number}"
+            )
+        return record[field_name]
+
+    @staticmethod
+    def _parse_stars(stars, line_number):
+        try:
+            return int(float(stars))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid review stars value on line {line_number}: {stars}") from exc
 
     def load_target_businesses(self):
         businesses = {}
+        scanned_count = 0
+        skipped_count = 0
+
+        logger.info("Loading target businesses from %s", self.business_path)
 
         with self.business_path.open('r', encoding='utf-8') as business_file:
             for line_number, line in enumerate(business_file, start=1):
                 if not line.strip():
+                    skipped_count += 1
                     continue
 
                 try:
@@ -38,27 +71,49 @@ class DataExtractor:
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"Invalid business JSON on line {line_number}") from exc
 
+                scanned_count += 1
+                business_id = self._require_field(
+                    business,
+                    'business_id',
+                    line_number,
+                    'business',
+                )
                 category = self.category_filter.categorize_business(business.get('categories'))
                 if category is None:
+                    skipped_count += 1
                     continue
 
-                businesses[business['business_id']] = {
+                businesses[business_id] = {
                     'business_name': business.get('name', ''),
                     'category': category,
                 }
 
+        logger.info(
+            "Loaded %s target businesses from %s scanned records; skipped %s records",
+            len(businesses),
+            scanned_count,
+            skipped_count,
+        )
         return businesses
 
     def extract_balanced_rows(self):
         businesses = self.load_target_businesses()
+        if not businesses:
+            logger.warning("No target businesses matched the configured categories")
+
         balancer = ReservoirReviewBalancer(
             reviews_per_stratum=self.reviews_per_stratum,
             random_state=self.random_state,
         )
+        scanned_count = 0
+        matched_count = 0
+        skipped_count = 0
 
+        logger.info("Scanning reviews from %s", self.review_path)
         with self.review_path.open('r', encoding='utf-8') as review_file:
             for line_number, line in enumerate(review_file, start=1):
                 if not line.strip():
+                    skipped_count += 1
                     continue
 
                 try:
@@ -66,17 +121,32 @@ class DataExtractor:
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"Invalid review JSON on line {line_number}") from exc
 
-                business = businesses.get(review.get('business_id'))
+                scanned_count += 1
+                business_id = self._require_field(review, 'business_id', line_number, 'review')
+                business = businesses.get(business_id)
                 if business is None:
+                    skipped_count += 1
                     continue
 
+                stars = self._require_field(review, 'stars', line_number, 'review')
                 balancer.add({
-                    'business_id': review['business_id'],
+                    'business_id': business_id,
                     'business_name': business['business_name'],
                     'category': business['category'],
-                    'stars': int(float(review['stars'])),
+                    'stars': self._parse_stars(stars, line_number),
                     'review_text': review.get('text', ''),
                     'review_date': review.get('date', ''),
                 })
+                matched_count += 1
 
-        return balancer.rows(), balancer.counts_by_stratum()
+        rows = balancer.rows()
+        counts_by_stratum = balancer.counts_by_stratum()
+        logger.info(
+            "Scanned %s reviews; matched %s eligible reviews; skipped %s reviews; sampled %s rows across %s strata",
+            scanned_count,
+            matched_count,
+            skipped_count,
+            len(rows),
+            len(counts_by_stratum),
+        )
+        return rows, counts_by_stratum

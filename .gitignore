@@ -1,0 +1,18 @@
+# Data files
+data/*.json
+
+# Output files
+output/*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+*.egg-info/
+/docs/yelp_data_extractor_balancer.docx
+
+# Editor files
+.idea/

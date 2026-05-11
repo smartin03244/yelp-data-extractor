@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yelp-data-extractor-balancer"
+version = "0.1.0"
+description = "Stream, filter, and balance Yelp Academic Dataset reviews by simplified business category."
+readme = "docs/streaming_pipeline_design.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+]
+authors = [
+    { name = "Project Maintainer" },
+]
+keywords = [
+    "yelp",
+    "jsonl",
+    "csv",
+    "reservoir-sampling",
+    "data-processing",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+[project.scripts]
+yelp-balance = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["src"]

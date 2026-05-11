@@ -42,6 +42,12 @@ Create and activate a virtual environment, then install the project:
 python -m pip install -e .
 ```
 
+For development and testing, install the optional test dependency:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
 After installation, the CLI command is available as:
 
 ```bash
@@ -119,10 +125,12 @@ Additional notes are available in `docs/`:
 
 ## Development Checks
 
-Basic syntax check:
+Run these checks before committing:
 
 ```bash
-python -m py_compile main.py src/*.py
+python -m compileall main.py src
+python main.py --help
+pytest
 ```
 
 Check what will be committed:
@@ -131,6 +139,9 @@ Check what will be committed:
 git status --short
 git ls-files
 ```
+
+The pytest suite uses small temporary JSONL fixtures, so it does not need the
+full Yelp dataset.
 
 Do not commit raw Yelp data, generated CSV files, virtual environments, IDE
 metadata, or Python cache files.

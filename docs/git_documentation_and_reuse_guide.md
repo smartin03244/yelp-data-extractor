@@ -12,6 +12,7 @@ Recommended files to commit:
 .gitignore
 pyproject.toml
 main.py
+tests/test_pipeline.py
 src/__init__.py
 src/category_filter.py
 src/data_extractor.py
@@ -238,16 +239,27 @@ bounded and makes each stage easy to test.
 
 ## Testing Ideas for Future Work
 
-Useful tests to add:
+The project now includes a pytest smoke suite in `tests/test_pipeline.py`. These
+tests use tiny temporary JSONL fixtures instead of the full Yelp dataset, which
+makes them fast enough to run before every commit.
+
+Current coverage includes:
 
 - category names map to the expected simplified labels;
 - non-target businesses are skipped;
 - review rows are joined with the correct business name and simplified category;
 - each stratum respects the configured cap;
-- undersized strata keep all available rows;
 - CSV output contains exactly the required columns;
+- invalid configuration is rejected;
+- missing input files are reported clearly;
+- invalid review star values include the source line number.
+
+Useful tests to add later:
+
+- undersized strata keep all available rows;
 - size-limit retry lowers the per-stratum cap;
-- random sampling is repeatable when the same seed is used.
+- random sampling is repeatable when the same seed is used;
+- malformed JSON reports the source file and line number.
 
 Small hand-written JSONL fixtures are enough for most of these tests. The full
 Yelp files should not be needed for routine automated testing.
@@ -258,7 +270,9 @@ Before committing, check:
 
 ```bash
 git status --short
-python -m py_compile main.py src/*.py
+python -m compileall main.py src
+python main.py --help
+pytest
 ```
 
 Then review what changed:

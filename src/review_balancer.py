@@ -56,6 +56,14 @@ class ReviewBalancer:
             .head(self.reviews_per_stratum)
         )
 
+    def _sample_group(self, group_df):
+        sample_size = min(len(group_df), self.reviews_per_stratum)
+        return (
+            group_df
+            if sample_size == len(group_df)
+            else group_df.sample(n=sample_size, random_state=self.random_state)
+        )
+
     def group_reviews(self, df):
         """
         Group reviews by category and rating.
@@ -87,17 +95,10 @@ class ReviewBalancer:
         Returns:
             Dictionary with sampled reviews
         """
-        sampled = {}
-
-        for key, group_df in grouped_reviews.items():
-            sample_size = min(len(group_df), self.reviews_per_stratum)
-
-            if sample_size == len(group_df):
-                sampled[key] = group_df
-            else:
-                sampled[key] = group_df.sample(n=sample_size, random_state=self.random_state)
-
-        return sampled
+        return {
+            key: self._sample_group(group_df)
+            for key, group_df in grouped_reviews.items()
+        }
 
     def create_balanced_dataset(self, df):
         """
@@ -181,6 +182,13 @@ class ReservoirReviewBalancer:
     """
 
     OUTPUT_COLUMNS = ReviewBalancer.OUTPUT_COLUMNS
+    RATING_GROUPS = {
+        1: '1-2 stars',
+        2: '1-2 stars',
+        3: '3 stars',
+        4: '4-5 stars',
+        5: '4-5 stars',
+    }
 
     def __init__(self, reviews_per_stratum=500, random_state=42):
         self.reviews_per_stratum = reviews_per_stratum
@@ -191,15 +199,7 @@ class ReservoirReviewBalancer:
     @staticmethod
     def rating_group(stars):
         stars = int(float(stars))
-
-        if stars in (1, 2):
-            return '1-2 stars'
-        if stars == 3:
-            return '3 stars'
-        if stars in (4, 5):
-            return '4-5 stars'
-
-        return None
+        return ReservoirReviewBalancer.RATING_GROUPS.get(stars)
 
     def add(self, row):
         rating_group = self.rating_group(row['stars'])
@@ -220,10 +220,11 @@ class ReservoirReviewBalancer:
             bucket[replacement_index] = row
 
     def rows(self):
-        output_rows = []
-
-        for key in sorted(self.samples):
-            output_rows.extend(self.samples[key])
+        output_rows = [
+            row
+            for key in sorted(self.samples)
+            for row in self.samples[key]
+        ]
 
         self.random.shuffle(output_rows)
         return output_rows

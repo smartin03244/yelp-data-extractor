@@ -5,6 +5,8 @@ import pandas as pd
 
 
 class ReviewBalancer:
+    """Pandas-based review sampler kept for smaller in-memory datasets."""
+
     INPUT_COLUMNS = ['business_id', 'name', 'category', 'stars_x', 'text', 'date']
     OUTPUT_RENAME_MAP = {
         'name': 'business_name',
@@ -57,6 +59,7 @@ class ReviewBalancer:
         )
 
     def _sample_group(self, group_df):
+        """Return a capped random sample from a single grouped DataFrame."""
         sample_size = min(len(group_df), self.reviews_per_stratum)
         return (
             group_df
@@ -191,6 +194,7 @@ class ReservoirReviewBalancer:
     }
 
     def __init__(self, reviews_per_stratum=500, random_state=42):
+        """Create a per-stratum reservoir sampler."""
         self.reviews_per_stratum = reviews_per_stratum
         self.random = random.Random(random_state)
         self.samples = defaultdict(list)
@@ -198,10 +202,12 @@ class ReservoirReviewBalancer:
 
     @staticmethod
     def rating_group(stars):
+        """Return the rating stratum label for a numeric Yelp star rating."""
         stars = int(float(stars))
         return ReservoirReviewBalancer.RATING_GROUPS.get(stars)
 
     def add(self, row):
+        """Consider one output-shaped review row for reservoir sampling."""
         rating_group = self.rating_group(row['stars'])
         if rating_group is None:
             return
@@ -220,6 +226,7 @@ class ReservoirReviewBalancer:
             bucket[replacement_index] = row
 
     def rows(self):
+        """Return sampled rows in a repeatably shuffled order."""
         output_rows = [
             row
             for key in sorted(self.samples)
@@ -230,4 +237,5 @@ class ReservoirReviewBalancer:
         return output_rows
 
     def counts_by_stratum(self):
+        """Return the number of eligible rows seen for each stratum."""
         return dict(self.seen_counts)

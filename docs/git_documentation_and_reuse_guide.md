@@ -68,7 +68,7 @@ someone run the project quickly.
 Suggested sections:
 
 ```text
-# Yelp Data Extractor Balancer
+# yelp-data-extractor
 
 ## What It Does
 ## Requirements

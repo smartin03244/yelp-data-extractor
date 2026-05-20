@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "yelp-data-extractor-balancer"
+name = "yelp-data-extractor"
 version = "0.1.0"
 description = "Stream, filter, and balance Yelp Academic Dataset reviews by simplified business category."
 readme = "docs/streaming_pipeline_design.md"
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-yelp-balance = "main:main"
+yelp-data-extractor = "main:main"
 
 [tool.setuptools]
 py-modules = ["main"]

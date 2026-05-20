@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class DataExtractor:
-    """
-    Extracts a balanced review sample from Yelp JSONL files without loading the
-    5GB review file into memory.
+    """Extract balanced Yelp review rows from newline-delimited JSON files.
+
+    Business records are filtered into a small lookup table first. Review records
+    are then streamed line by line and sampled, which avoids loading the large
+    Yelp review file into memory.
     """
 
     def __init__(
@@ -31,6 +33,7 @@ class DataExtractor:
         self._validate_inputs()
 
     def _validate_inputs(self):
+        """Validate configured paths and sampling limits before extraction."""
         if self.reviews_per_stratum <= 0:
             raise ValueError("reviews_per_stratum must be greater than 0")
         if not self.business_path.is_file():
@@ -40,6 +43,7 @@ class DataExtractor:
 
     @staticmethod
     def _require_field(record, field_name, line_number, file_label):
+        """Return a required JSON field or raise an error with source context."""
         if field_name not in record or record[field_name] in (None, ''):
             raise ValueError(
                 f"Missing required field '{field_name}' in {file_label} JSON on line {line_number}"
@@ -48,45 +52,55 @@ class DataExtractor:
 
     @staticmethod
     def _parse_stars(stars, line_number):
+        """Normalize a Yelp star value to an integer rating."""
         try:
             return int(float(stars))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"Invalid review stars value on line {line_number}: {stars}") from exc
 
+    @staticmethod
+    def _iter_jsonl_records(path, file_label):
+        """Yield parsed JSON objects from a JSONL file with line numbers."""
+        with path.open('r', encoding='utf-8') as input_file:
+            for line_number, line in enumerate(input_file, start=1):
+                if not line.strip():
+                    yield line_number, None
+                    continue
+
+                try:
+                    yield line_number, json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid {file_label} JSON on line {line_number}") from exc
+
     def load_target_businesses(self):
+        """Load Yelp businesses that match the configured target categories."""
         businesses = {}
         scanned_count = 0
         skipped_count = 0
 
         logger.info("Loading target businesses from %s", self.business_path)
 
-        with self.business_path.open('r', encoding='utf-8') as business_file:
-            for line_number, line in enumerate(business_file, start=1):
-                if not line.strip():
-                    skipped_count += 1
-                    continue
+        for line_number, business in self._iter_jsonl_records(self.business_path, 'business'):
+            if business is None:
+                skipped_count += 1
+                continue
 
-                try:
-                    business = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid business JSON on line {line_number}") from exc
+            scanned_count += 1
+            business_id = self._require_field(
+                business,
+                'business_id',
+                line_number,
+                'business',
+            )
+            category = self.category_filter.categorize_business(business.get('categories'))
+            if category is None:
+                skipped_count += 1
+                continue
 
-                scanned_count += 1
-                business_id = self._require_field(
-                    business,
-                    'business_id',
-                    line_number,
-                    'business',
-                )
-                category = self.category_filter.categorize_business(business.get('categories'))
-                if category is None:
-                    skipped_count += 1
-                    continue
-
-                businesses[business_id] = {
-                    'business_name': business.get('name', ''),
-                    'category': category,
-                }
+            businesses[business_id] = {
+                'business_name': business.get('name', ''),
+                'category': category,
+            }
 
         logger.info(
             "Loaded %s target businesses from %s scanned records; skipped %s records",
@@ -97,6 +111,7 @@ class DataExtractor:
         return businesses
 
     def extract_balanced_rows(self):
+        """Stream Yelp reviews and return sampled rows plus stratum counts."""
         businesses = self.load_target_businesses()
         if not businesses:
             logger.warning("No target businesses matched the configured categories")
@@ -110,34 +125,30 @@ class DataExtractor:
         skipped_count = 0
 
         logger.info("Scanning reviews from %s", self.review_path)
-        with self.review_path.open('r', encoding='utf-8') as review_file:
-            for line_number, line in enumerate(review_file, start=1):
-                if not line.strip():
-                    skipped_count += 1
-                    continue
+        for line_number, review in self._iter_jsonl_records(self.review_path, 'review'):
+            if review is None:
+                skipped_count += 1
+                continue
 
-                try:
-                    review = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid review JSON on line {line_number}") from exc
+            scanned_count += 1
+            business_id = self._require_field(review, 'business_id', line_number, 'review')
+            business = businesses.get(business_id)
+            if business is None:
+                skipped_count += 1
+                continue
 
-                scanned_count += 1
-                business_id = self._require_field(review, 'business_id', line_number, 'review')
-                business = businesses.get(business_id)
-                if business is None:
-                    skipped_count += 1
-                    continue
-
-                stars = self._require_field(review, 'stars', line_number, 'review')
-                balancer.add({
-                    'business_id': business_id,
-                    'business_name': business['business_name'],
-                    'category': business['category'],
-                    'stars': self._parse_stars(stars, line_number),
-                    'review_text': review.get('text', ''),
-                    'review_date': review.get('date', ''),
-                })
-                matched_count += 1
+            stars = self._require_field(review, 'stars', line_number, 'review')
+            # Rows are shaped for the final CSV before sampling so the reservoir
+            # never stores unused source fields from the large Yelp records.
+            balancer.add({
+                'business_id': business_id,
+                'business_name': business['business_name'],
+                'category': business['category'],
+                'stars': self._parse_stars(stars, line_number),
+                'review_text': review.get('text', ''),
+                'review_date': review.get('date', ''),
+            })
+            matched_count += 1
 
         rows = balancer.rows()
         counts_by_stratum = balancer.counts_by_stratum()

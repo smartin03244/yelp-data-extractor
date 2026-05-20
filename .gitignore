@@ -12,7 +12,7 @@ __pycache__/
 .Python
 venv/
 *.egg-info/
-/docs/yelp_data_extractor_balancer.docx
+/docs/yelp_data_extractor.docx
 
 # Editor files
 .idea/

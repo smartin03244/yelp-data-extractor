@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def configure_logging(log_level):
+    """Configure process-wide logging for the command-line interface."""
     logging.basicConfig(
         level=getattr(logging, log_level),
         format='%(levelname)s:%(name)s:%(message)s',
@@ -24,6 +25,12 @@ def build_dataset(
     max_size_mb=30,
     random_state=42,
 ):
+    """Build a balanced Yelp review CSV that stays within the size limit.
+
+    The first pass writes the requested number of reviews per stratum. If the
+    finished CSV is too large, the pipeline lowers the per-stratum cap based on
+    the measured file size and retries.
+    """
     if reviews_per_stratum <= 0:
         raise ValueError("reviews_per_stratum must be greater than 0")
     if max_size_mb <= 0:
@@ -72,8 +79,9 @@ def build_dataset(
 
 
 def parse_args():
+    """Parse command-line arguments for yelp-data-extractor."""
     parser = argparse.ArgumentParser(
-        description="Extract a balanced Yelp review CSV by simplified business category."
+        description="yelp-data-extractor: extract a balanced Yelp review CSV by simplified business category."
     )
     parser.add_argument(
         '--businesses',
@@ -119,6 +127,7 @@ def parse_args():
 
 
 def main():
+    """Run the yelp-data-extractor command-line workflow."""
     args = parse_args()
     configure_logging(args.log_level)
 

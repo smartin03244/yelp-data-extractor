@@ -4,6 +4,8 @@ import pandas as pd
 
 
 class CategoryFilter:
+    """Map raw Yelp business categories into simplified project categories."""
+
     CATEGORY_MAPPINGS = {
         'Restaurants': (
             'restaurant', 'food', 'pizza', 'burger', 'sandwich', 'tacos',
@@ -24,13 +26,14 @@ class CategoryFilter:
     TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
     def __init__(self):
-        """Initialize the CategoryFilter with category mappings."""
+        """Precompute keyword sets for efficient category matching."""
         self.keywords_by_category = {
             category: set(keywords)
             for category, keywords in self.CATEGORY_MAPPINGS.items()
         }
 
     def _iter_category_tokens(self, categories):
+        """Yield normalized category tokens, including simple singular forms."""
         if categories is None or categories is pd.NA:
             return
 
@@ -49,8 +52,7 @@ class CategoryFilter:
                 yield token[:-1]
 
     def categorize_business(self, categories_list):
-        """
-        Map a business's raw categories to our simplified categories.
+        """Map a business's raw Yelp categories to a simplified category.
         
         Args:
             categories_list: List of category strings from the business data
@@ -61,7 +63,7 @@ class CategoryFilter:
         tokens = set(self._iter_category_tokens(categories_list))
 
         for category, keywords in self.keywords_by_category.items():
-            if tokens.intersection(keywords):
+            if any(keyword in tokens for keyword in keywords):
                 return category
 
         return None
@@ -95,4 +97,7 @@ class CategoryFilter:
         Returns:
             Series with counts per category
         """
+        if 'category' not in df.columns:
+            raise ValueError("Missing required column: category")
+
         return df['category'].value_counts()

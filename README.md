@@ -1,4 +1,4 @@
-# Yelp Data Extractor Balancer
+# yelp-data-extractor
 
 A memory-efficient Python tool for extracting a balanced sample of Yelp Academic
 Dataset reviews by business category and review rating.
@@ -51,7 +51,7 @@ python -m pip install -e ".[dev]"
 After installation, the CLI command is available as:
 
 ```bash
-yelp-balance
+yelp-data-extractor
 ```
 
 ## Input Files
@@ -70,13 +70,13 @@ The raw dataset files are intentionally ignored by Git.
 Run with default paths:
 
 ```bash
-yelp-balance
+yelp-data-extractor
 ```
 
 Run with explicit options:
 
 ```bash
-yelp-balance \
+yelp-data-extractor \
   --businesses data/yelp_academic_dataset_business.json \
   --reviews data/yelp_academic_dataset_review.json \
   --output output/yelp_balanced_reviews.csv \

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUTPUT_DIR = Path('output')
 DEFAULT_LOG_DIR = Path('logs')
 DEFAULT_LOG_FILE = 'yelp-data-extractor.log'
+EXPECTED_ERRORS = (FileNotFoundError, PermissionError, ValueError, RuntimeError, OSError)
 
 
 def configure_logging(log_level, log_dir=DEFAULT_LOG_DIR, log_file=DEFAULT_LOG_FILE):
@@ -186,32 +187,46 @@ def parse_args():
     return parser.parse_args()
 
 
+def build_dataset_from_args(args):
+    """Resolve CLI arguments and run the dataset build."""
+    return build_dataset(
+        business_path=args.businesses,
+        review_path=args.reviews,
+        output_path=resolve_output_path(args.output),
+        columns_config_path=args.columns_config,
+        reviews_per_stratum=args.reviews_per_stratum,
+        max_size_mb=args.max_size_mb,
+        random_state=args.random_state,
+    )
+
+
+def print_success(result):
+    """Print the successful build summary shown to CLI users."""
+    print(
+        f"Wrote {result['row_count']} rows to {result['output_path']} "
+        f"({result['size_mb']:.2f} MB, {result['reviews_per_stratum']} per stratum)."
+    )
+
+
+def report_error(exc, log_path):
+    """Log a handled failure and print a concise CLI error message."""
+    logger.exception("Dataset build failed")
+    print(f"Error: {exc}. See {log_path} for details.", file=sys.stderr)
+
+
 def main():
     """Run the yelp-data-extractor command-line workflow."""
     args = parse_args()
-    output_path = resolve_output_path(args.output)
     log_path = configure_logging(args.log_level, log_dir=args.log_dir)
 
     try:
-        result = build_dataset(
-            business_path=args.businesses,
-            review_path=args.reviews,
-            output_path=output_path,
-            columns_config_path=args.columns_config,
-            reviews_per_stratum=args.reviews_per_stratum,
-            max_size_mb=args.max_size_mb,
-            random_state=args.random_state,
-        )
-    except (FileNotFoundError, PermissionError, ValueError, RuntimeError, OSError) as exc:
-        logger.exception("Dataset build failed")
-        print(f"Error: {exc}. See {log_path} for details.", file=sys.stderr)
+        result = build_dataset_from_args(args)
+    except EXPECTED_ERRORS as exc:
+        report_error(exc, log_path)
         return 1
-    else:
-        print(
-            f"Wrote {result['row_count']} rows to {result['output_path']} "
-            f"({result['size_mb']:.2f} MB, {result['reviews_per_stratum']} per stratum)."
-        )
-        return 0
+
+    print_success(result)
+    return 0
 
 
 if __name__ == '__main__':

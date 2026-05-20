@@ -66,7 +66,13 @@ class OutputGenerator:
         if invalid_columns:
             raise ValueError(f"Output column names must be non-empty strings: {config_path}")
 
-        duplicate_columns = sorted({column for column in columns if columns.count(column) > 1})
+        seen_columns = set()
+        duplicate_columns = set()
+        for column in columns:
+            if column in seen_columns:
+                duplicate_columns.add(column)
+            seen_columns.add(column)
+        duplicate_columns = sorted(duplicate_columns)
         if duplicate_columns:
             raise ValueError(
                 f"Output column config contains duplicate columns: {', '.join(duplicate_columns)}"

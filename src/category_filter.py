@@ -2,8 +2,6 @@
 
 import re
 
-import pandas as pd
-
 
 class CategoryFilter:
     """Map raw Yelp business categories into simplified project categories."""
@@ -36,14 +34,18 @@ class CategoryFilter:
 
     def _iter_category_tokens(self, categories):
         """Yield normalized category tokens, including simple singular forms."""
-        if categories is None or categories is pd.NA:
+        if self._is_missing_category_value(categories):
             return
 
         if isinstance(categories, str):
             text = categories
         else:
             try:
-                text = ' '.join(str(category) for category in categories if pd.notna(category))
+                text = ' '.join(
+                    str(category)
+                    for category in categories
+                    if not self._is_missing_category_value(category)
+                )
             except TypeError:
                 text = str(categories)
 
@@ -52,6 +54,17 @@ class CategoryFilter:
 
             if len(token) > 3 and token.endswith('s'):
                 yield token[:-1]
+
+    @staticmethod
+    def _is_missing_category_value(value):
+        """Return True for None, NaN, and pandas-style missing category values."""
+        if value is None:
+            return True
+
+        try:
+            return bool(value != value)
+        except TypeError:
+            return str(value) == '<NA>'
 
     def categorize_business(self, categories_list):
         """Map a business's raw Yelp categories to a simplified category.

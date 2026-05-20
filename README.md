@@ -6,6 +6,8 @@ Dataset reviews by business category and review rating.
 The project streams the large Yelp review JSONL file instead of loading it into
 memory, joins reviews to filtered business metadata, samples reviews by category
 and rating stratum, and writes a clean UTF-8 CSV under a configurable size limit.
+If the first CSV is too large, the project downsamples the rows already in memory
+instead of rescanning the full review file.
 
 ## What It Does
 
@@ -42,6 +44,17 @@ Create and activate a virtual environment, then install the project:
 ```bash
 python -m pip install -e .
 ```
+
+Or use the bundled setup installer:
+
+```bash
+bash setup/install.sh
+./yelp-data-extractor --help
+```
+
+The installer lets you choose an OS-default install location, a custom location,
+or a project-local `.venv`. It installs dependencies and creates a project-root
+`./yelp-data-extractor` symlink. See `setup/USER_GUIDE.md` for the quick guide.
 
 For development and testing, install the optional test dependency:
 
@@ -141,6 +154,13 @@ Additional notes are available in `docs/`:
 - `docs/streaming_pipeline_design.md`
 - `docs/git_documentation_and_reuse_guide.md`
 - `docs/review_balancer_optimization_summary.md`
+- `docs/expansion_roadmap.md`
+
+## License
+
+This project is licensed under Creative Commons Attribution-NonCommercial 4.0.
+See `LICENSE` for attribution, noncommercial use terms, and commercial licensing
+contact information.
 
 ## Development Checks
 

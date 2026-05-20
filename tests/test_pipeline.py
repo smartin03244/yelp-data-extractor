@@ -10,6 +10,7 @@ from main import build_dataset, resolve_output_path
 from src.category_filter import CategoryFilter
 from src.data_extractor import DataExtractor
 from src.output_generator import OutputGenerator
+from src.review_balancer import downsample_output_rows
 
 
 def write_jsonl(path, records):
@@ -177,6 +178,103 @@ def test_build_dataset_uses_configured_output_columns(sample_files, tmp_path):
     assert result['output_columns'] == ['business_name', 'stars']
     assert reader.fieldnames == ['business_name', 'stars']
     assert all(set(row) == {'business_name', 'stars'} for row in rows)
+
+
+def test_build_dataset_downsamples_existing_rows_for_size_limit(tmp_path, monkeypatch):
+    """Oversized output should be reduced without requiring another extraction."""
+    business_path = tmp_path / 'businesses.json'
+    review_path = tmp_path / 'reviews.json'
+    output_path = tmp_path / 'balanced_reviews.csv'
+    columns_config_path = tmp_path / 'output_columns.json'
+    columns_config_path.write_text(
+        json.dumps({'output_columns': OutputGenerator.DEFAULT_OUTPUT_COLUMNS}),
+        encoding='utf-8',
+    )
+
+    write_jsonl(
+        business_path,
+        [
+            {
+                'business_id': 'restaurant-1',
+                'name': 'Sample Cafe',
+                'categories': 'Restaurants',
+            },
+        ],
+    )
+    write_jsonl(
+        review_path,
+        [
+            {
+                'business_id': 'restaurant-1',
+                'stars': 5,
+                'text': f"Excellent review {index}. " + ('x' * 200),
+                'date': '2026-01-01',
+            }
+            for index in range(10)
+        ],
+    )
+
+    extract_call_count = 0
+    original_extract_balanced_rows = DataExtractor.extract_balanced_rows
+
+    def count_extract_calls(extractor):
+        """Count extraction calls while preserving real extractor behavior."""
+        nonlocal extract_call_count
+        extract_call_count += 1
+        return original_extract_balanced_rows(extractor)
+
+    monkeypatch.setattr(DataExtractor, 'extract_balanced_rows', count_extract_calls)
+
+    result = build_dataset(
+        business_path=business_path,
+        review_path=review_path,
+        output_path=output_path,
+        columns_config_path=columns_config_path,
+        reviews_per_stratum=10,
+        max_size_mb=0.0004,
+        random_state=42,
+    )
+
+    with output_path.open('r', encoding='utf-8', newline='') as input_file:
+        rows = list(csv.DictReader(input_file))
+
+    assert result['reviews_per_stratum'] < 10
+    assert result['row_count'] == len(rows)
+    assert output_path.stat().st_size <= 0.0004 * 1024 * 1024
+    assert extract_call_count == 1
+
+
+def test_downsample_output_rows_caps_each_stratum():
+    """Output rows should be capped independently for each stratum."""
+    rows = [
+        {
+            'business_id': f'restaurant-{index}',
+            'business_name': 'Sample Cafe',
+            'category': 'Restaurants',
+            'stars': 5,
+            'review_text': 'Good.',
+            'review_date': '2026-01-01',
+        }
+        for index in range(5)
+    ] + [
+        {
+            'business_id': f'auto-{index}',
+            'business_name': 'Sample Auto',
+            'category': 'Auto Repair & Service',
+            'stars': 2,
+            'review_text': 'Slow.',
+            'review_date': '2026-01-01',
+        }
+        for index in range(5)
+    ]
+
+    sampled_rows = downsample_output_rows(rows, reviews_per_stratum=2, random_state=42)
+    restaurants = [row for row in sampled_rows if row['category'] == 'Restaurants']
+    auto_reviews = [row for row in sampled_rows if row['category'] == 'Auto Repair & Service']
+
+    assert len(sampled_rows) == 4
+    assert len(restaurants) == 2
+    assert len(auto_reviews) == 2
 
 
 def test_output_generator_rejects_invalid_column_config(tmp_path):

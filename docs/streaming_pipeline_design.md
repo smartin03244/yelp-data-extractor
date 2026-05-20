@@ -29,7 +29,7 @@ business_id,business_name,category,stars,review_text,review_date
 ```
 
 - verify the final file is under 30MB;
-- reduce the per-stratum limit proportionally if the file is too large.
+- reduce the in-memory sample proportionally if the file is too large.
 - write runtime logs to the configured log directory, `logs/` by default.
 
 ## High-Level Architecture
@@ -73,7 +73,8 @@ business_id -> {business_name, category}
 9. After streaming finishes, write sampled rows to CSV in the configured column
    order. Relative output paths are resolved under `output/`.
 10. Check the actual CSV file size.
-11. If the file is too large, lower the per-stratum cap and rerun.
+11. If the file is too large, lower the per-stratum cap, downsample the
+    already-sampled rows, and rewrite the CSV.
 
 ## Why Streaming Instead of a Full Pandas Merge
 
@@ -145,12 +146,13 @@ new_cap = current_cap * (max_allowed_bytes / actual_file_bytes) * safety_margin
 ```
 
 The safety margin is currently `0.98`, which leaves a little room for CSV quoting
-and row-length variation. The pipeline then reruns extraction using the smaller
-cap.
+and row-length variation. The pipeline then downsamples the first-pass reservoir
+sample using the smaller cap and rewrites the CSV.
 
 This approach is more reliable than estimating size from a DataFrame, because
 CSV size depends on UTF-8 encoding, delimiters, quotes, newlines, and review text
-lengths.
+lengths. It also avoids rescanning the large Yelp review file when only the final
+sample size needs to change.
 
 ## Category Mapping Design
 
@@ -245,12 +247,13 @@ per-stratum cap.
 - Keeps random sampling fair within each category/rating stratum.
 - Enforces the exact output schema.
 - Measures actual CSV size instead of relying on an estimate.
+- Avoids rescanning the review file for size-limit retries.
 - Keeps major responsibilities in separate classes.
 
 ### Costs
 
-- If the first output is larger than 30MB, the pipeline rescans the review file
-  with a smaller cap.
+- If the first output is larger than 30MB, the pipeline rewrites the CSV from the
+  bounded in-memory sample.
 - The current category mapping is keyword-based and approximate.
 - The sampled rows are held in memory at the end, although this is bounded by the
   stratum cap and category count.
@@ -266,8 +269,6 @@ Useful extensions for future versions:
 - Add progress logging while scanning the large review file.
 - Emit a summary report showing available and selected counts by stratum.
 - Add stricter category mappings based on exact Yelp category names.
-- Persist the first-pass reservoir samples and downsample them if the file is too
-  large, avoiding a second full review-file scan.
 - Add support for compressed input files if the dataset is stored as `.json.gz`.
 
 ## General Lessons

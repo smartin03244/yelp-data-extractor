@@ -21,6 +21,7 @@ src/output_generator.py
 src/review_balancer.py
 docs/review_balancer_optimization_summary.md
 docs/streaming_pipeline_design.md
+docs/expansion_roadmap.md
 docs/git_documentation_and_reuse_guide.md
 ```
 
@@ -51,6 +52,7 @@ why the code is shaped the way it is. The following documents are worth keeping:
 | --- | --- |
 | `docs/streaming_pipeline_design.md` | Explains the current architecture and optimization strategy. |
 | `docs/review_balancer_optimization_summary.md` | Preserves the earlier pandas-oriented optimization notes. |
+| `docs/expansion_roadmap.md` | Captures future directions for analysis, APIs, and source adapters. |
 | `docs/git_documentation_and_reuse_guide.md` | Explains what to commit and how the techniques transfer to other projects. |
 
 If this project grows, add these later:
@@ -265,6 +267,7 @@ Current coverage includes:
 - custom output-column config controls CSV headers and order;
 - invalid output-column config fails clearly;
 - bare output filenames resolve under the `output/` directory;
+- size-limit retry lowers the per-stratum cap without rescanning the review file;
 - invalid configuration is rejected;
 - missing input files are reported clearly;
 - invalid review star values include the source line number.
@@ -272,7 +275,6 @@ Current coverage includes:
 Useful tests to add later:
 
 - undersized strata keep all available rows;
-- size-limit retry lowers the per-stratum cap;
 - random sampling is repeatable when the same seed is used;
 - malformed JSON reports the source file and line number.
 

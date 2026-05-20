@@ -3,7 +3,33 @@
 import random
 from collections import defaultdict
 
-import pandas as pd
+
+def group_output_rows_by_stratum(rows):
+    """Group output-shaped review rows by category and rating stratum."""
+    grouped_rows = defaultdict(list)
+    for row in rows:
+        rating_group = ReservoirReviewBalancer.rating_group(row['stars'])
+        if rating_group is not None:
+            grouped_rows[(row['category'], rating_group)].append(row)
+    return grouped_rows
+
+
+def downsample_output_rows(rows, reviews_per_stratum, random_state=42):
+    """Return rows capped per category/rating stratum without rescanning input."""
+    if reviews_per_stratum <= 0:
+        raise ValueError("reviews_per_stratum must be greater than 0")
+
+    randomizer = random.Random(random_state)
+    grouped_rows = group_output_rows_by_stratum(rows)
+    sampled_groups = [
+        group_rows
+        if len(group_rows) <= reviews_per_stratum
+        else randomizer.sample(group_rows, reviews_per_stratum)
+        for group_rows in grouped_rows.values()
+    ]
+    sampled_rows = [row for group_rows in sampled_groups for row in group_rows]
+    randomizer.shuffle(sampled_rows)
+    return sampled_rows
 
 
 class ReviewBalancer:
@@ -33,6 +59,8 @@ class ReviewBalancer:
         """
         Convert numeric review ratings into the three required rating strata.
         """
+        import pandas as pd
+
         return pd.cut(
             ratings,
             bins=[0, 2, 3, 5],

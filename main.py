@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.data_extractor import DataExtractor
 from src.output_generator import OutputGenerator
+from src.review_balancer import downsample_output_rows
 
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,9 @@ def build_dataset(
 ):
     """Build a balanced Yelp review CSV that stays within the size limit.
 
-    The first pass writes the requested number of reviews per stratum. If the
-    finished CSV is too large, the pipeline lowers the per-stratum cap based on
-    the measured file size and retries.
+    The extraction pass samples the requested number of reviews per stratum. If
+    the finished CSV is too large, the pipeline lowers the per-stratum cap and
+    rewrites a smaller CSV from the sampled rows already in memory.
     """
     if reviews_per_stratum <= 0:
         raise ValueError("reviews_per_stratum must be greater than 0")
@@ -75,7 +76,6 @@ def build_dataset(
         raise ValueError("max_size_mb must be greater than 0")
 
     output_path = Path(output_path)
-    current_limit = reviews_per_stratum
     logger.info(
         "Starting yelp-data-extractor build: businesses=%s reviews=%s output=%s columns_config=%s",
         business_path,
@@ -84,21 +84,24 @@ def build_dataset(
         columns_config_path,
     )
 
-    while current_limit > 0:
-        logger.info("Building dataset with %s reviews per stratum", current_limit)
-        extractor = DataExtractor(
-            business_path=business_path,
-            review_path=review_path,
-            reviews_per_stratum=current_limit,
-            random_state=random_state,
-        )
-        rows, counts_by_stratum = extractor.extract_balanced_rows()
+    extractor = DataExtractor(
+        business_path=business_path,
+        review_path=review_path,
+        reviews_per_stratum=reviews_per_stratum,
+        random_state=random_state,
+    )
+    extracted_rows, counts_by_stratum = extractor.extract_balanced_rows()
+    output = OutputGenerator(
+        output_path=output_path,
+        max_size_mb=max_size_mb,
+        columns_config_path=columns_config_path,
+    )
 
-        output = OutputGenerator(
-            output_path=output_path,
-            max_size_mb=max_size_mb,
-            columns_config_path=columns_config_path,
-        )
+    current_limit = reviews_per_stratum
+    rows = extracted_rows
+
+    while current_limit > 0:
+        logger.info("Writing dataset with %s reviews per stratum", current_limit)
         size_bytes = output.write_csv(rows)
 
         if output.is_under_size_limit():
@@ -125,6 +128,16 @@ def build_dataset(
             next_limit = current_limit - 1
 
         current_limit = next_limit
+        if current_limit <= 0:
+            break
+
+        # Downsample the first-pass reservoir instead of rescanning the large
+        # Yelp review file for every size-limit retry.
+        rows = downsample_output_rows(
+            extracted_rows,
+            reviews_per_stratum=current_limit,
+            random_state=random_state,
+        )
 
     raise RuntimeError("Could not produce a non-empty CSV under the configured size limit.")
 

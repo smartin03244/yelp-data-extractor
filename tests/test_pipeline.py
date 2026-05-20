@@ -2,8 +2,10 @@
 
 import csv
 import json
+import sys
 from pathlib import Path
 
+import main as cli
 import pytest
 
 from main import build_dataset, resolve_output_path
@@ -297,9 +299,24 @@ def test_output_generator_rejects_unsupported_columns(tmp_path):
 
 def test_resolve_output_path_puts_bare_filenames_in_output_directory():
     """Relative output paths should be written under the output directory."""
-    assert resolve_output_path('reviews.csv') == Path('output/reviews.csv')
-    assert resolve_output_path('exports/reviews.csv') == Path('output/exports/reviews.csv')
-    assert resolve_output_path('output/reviews.csv') == Path('output/reviews.csv')
+    output_dir = Path('output')
+
+    assert resolve_output_path('reviews.csv', output_dir=output_dir) == Path('output/reviews.csv')
+    assert resolve_output_path('exports/reviews.csv', output_dir=output_dir) == Path('output/exports/reviews.csv')
+    assert resolve_output_path('output/reviews.csv', output_dir=output_dir) == Path('output/reviews.csv')
+
+
+def test_cli_defaults_use_application_directories(tmp_path, monkeypatch):
+    """Installed launchers should be able to anchor config, logs, and output under the app dir."""
+    monkeypatch.setenv(cli.APP_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(sys, 'argv', ['yelp-data-extractor'])
+
+    args = cli.parse_args()
+
+    assert Path(args.log_dir) == tmp_path / 'logs'
+    assert Path(args.columns_config) == tmp_path / 'config' / 'output_columns.json'
+    assert resolve_output_path(args.output) == tmp_path / 'output' / 'yelp_balanced_reviews.csv'
+    assert resolve_output_path('output/custom.csv') == tmp_path / 'output' / 'custom.csv'
 
 
 def test_build_dataset_rejects_invalid_sample_size(sample_files, columns_config_path, tmp_path):
@@ -314,6 +331,37 @@ def test_build_dataset_rejects_invalid_sample_size(sample_files, columns_config_
             columns_config_path=columns_config_path,
             reviews_per_stratum=0,
         )
+
+
+def test_cli_logs_errors_to_requested_log_directory(tmp_path, monkeypatch, capsys):
+    """CLI failures should be logged with details in the configured log directory."""
+    log_dir = tmp_path / 'logs'
+
+    def fail_build(_args):
+        raise LookupError("unexpected test failure")
+
+    monkeypatch.setattr(cli, 'build_dataset_from_args', fail_build)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'yelp-data-extractor',
+            '--log-dir',
+            str(log_dir),
+        ],
+    )
+
+    exit_code = cli.main()
+
+    log_path = log_dir / 'yelp-data-extractor.log'
+    captured = capsys.readouterr()
+    log_text = log_path.read_text(encoding='utf-8')
+
+    assert exit_code == 1
+    assert log_path.is_file()
+    assert f"See {log_path} for details." in captured.err
+    assert "Dataset build failed" in log_text
+    assert "LookupError: unexpected test failure" in log_text
 
 
 def test_data_extractor_reports_missing_input_file(tmp_path):

@@ -3,6 +3,7 @@
 import argparse
 import logging
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -12,15 +13,41 @@ from src.review_balancer import downsample_output_rows
 
 
 logger = logging.getLogger(__name__)
-DEFAULT_OUTPUT_DIR = Path('output')
-DEFAULT_LOG_DIR = Path('logs')
+APP_DIR_ENV = 'YELP_DATA_EXTRACTOR_APP_DIR'
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_FILENAME = 'yelp_balanced_reviews.csv'
 DEFAULT_LOG_FILE = 'yelp-data-extractor.log'
 EXPECTED_ERRORS = (FileNotFoundError, PermissionError, ValueError, RuntimeError, OSError)
 
 
-def configure_logging(log_level, log_dir=DEFAULT_LOG_DIR, log_file=DEFAULT_LOG_FILE):
+def application_dir():
+    """Return the directory that owns runtime config, logs, and output."""
+    return Path(os.environ.get(APP_DIR_ENV, PROJECT_ROOT)).expanduser()
+
+
+def default_config_dir():
+    """Return the default application config directory."""
+    return application_dir() / 'config'
+
+
+def default_output_dir():
+    """Return the default application output directory."""
+    return application_dir() / 'output'
+
+
+def default_log_dir():
+    """Return the default application log directory."""
+    return application_dir() / 'logs'
+
+
+def default_columns_config_path():
+    """Return the default output-columns config path."""
+    return default_config_dir() / 'output_columns.json'
+
+
+def configure_logging(log_level, log_dir=None, log_file=DEFAULT_LOG_FILE):
     """Configure file logging for the command-line interface."""
-    log_dir = Path(log_dir)
+    log_dir = Path(log_dir) if log_dir is not None else default_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_file
     formatter = logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s')
@@ -40,13 +67,16 @@ def configure_logging(log_level, log_dir=DEFAULT_LOG_DIR, log_file=DEFAULT_LOG_F
     return log_path
 
 
-def resolve_output_path(output_path, output_dir=DEFAULT_OUTPUT_DIR):
+def resolve_output_path(output_path, output_dir=None):
     """Return an output path that keeps relative exports under output_dir."""
     output_path = Path(output_path)
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir) if output_dir is not None else default_output_dir()
 
     if output_path.is_absolute():
         return output_path
+
+    if output_path.parts and output_path.parts[0] == output_dir.name:
+        output_path = Path(*output_path.parts[1:]) if len(output_path.parts) > 1 else Path()
 
     try:
         output_path.relative_to(output_dir)
@@ -59,7 +89,7 @@ def build_dataset(
     business_path,
     review_path,
     output_path,
-    columns_config_path=OutputGenerator.DEFAULT_COLUMNS_CONFIG_PATH,
+    columns_config_path=None,
     reviews_per_stratum=500,
     max_size_mb=30,
     random_state=42,
@@ -76,6 +106,7 @@ def build_dataset(
         raise ValueError("max_size_mb must be greater than 0")
 
     output_path = Path(output_path)
+    columns_config_path = columns_config_path or default_columns_config_path()
     logger.info(
         "Starting yelp-data-extractor build: businesses=%s reviews=%s output=%s columns_config=%s",
         business_path,
@@ -159,12 +190,12 @@ def parse_args():
     )
     parser.add_argument(
         '--output',
-        default='output/yelp_balanced_reviews.csv',
-        help="Destination CSV path. Relative paths are written under output/",
+        default=DEFAULT_OUTPUT_FILENAME,
+        help="Destination CSV path. Relative paths are written under the application output directory.",
     )
     parser.add_argument(
         '--columns-config',
-        default=str(OutputGenerator.DEFAULT_COLUMNS_CONFIG_PATH),
+        default=str(default_columns_config_path()),
         help="JSON config file containing the output_columns list",
     )
     parser.add_argument(
@@ -193,7 +224,7 @@ def parse_args():
     )
     parser.add_argument(
         '--log-dir',
-        default=str(DEFAULT_LOG_DIR),
+        default=str(default_log_dir()),
         help="Directory where log files are written",
     )
 
@@ -235,6 +266,9 @@ def main():
     try:
         result = build_dataset_from_args(args)
     except EXPECTED_ERRORS as exc:
+        report_error(exc, log_path)
+        return 1
+    except Exception as exc:
         report_error(exc, log_path)
         return 1
 

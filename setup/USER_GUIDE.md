@@ -6,6 +6,8 @@ The installer script:
 
 - asks where to install the virtual environment;
 - creates the virtual environment in the selected location;
+- creates `config/`, `logs/`, and `output/` under the application directory;
+- installs the default output-column config if it is not already present;
 - installs `yelp-data-extractor` and its dependencies;
 - installs development dependencies, including `pytest`;
 - creates a project-root launcher named `yelp-data-extractor`.
@@ -61,6 +63,10 @@ Choose option `3` for the old project-local behavior, which installs into:
 .venv
 ```
 
+For options `1` and `2`, the selected install location is also the application
+directory. For option `3`, the project root is the application directory and the
+virtual environment is created under `.venv`.
+
 For unattended installs, set `INSTALL_DIR` before running the script:
 
 ```bash
@@ -87,9 +93,9 @@ Then run:
 
 By default:
 
-- CSV output is written under `output/`;
-- logs are written to `logs/yelp-data-extractor.log`;
-- output columns are read from `config/output_columns.json`.
+- CSV output is written under the application `output/` directory;
+- logs are written to the application `logs/yelp-data-extractor.log`;
+- output columns are read from the application `config/output_columns.json`.
 
 ## Run With Explicit Options
 
@@ -98,11 +104,9 @@ By default:
   --businesses data/yelp_academic_dataset_business.json \
   --reviews data/yelp_academic_dataset_review.json \
   --output yelp_balanced_reviews.csv \
-  --columns-config config/output_columns.json \
   --reviews-per-stratum 500 \
   --max-size-mb 30 \
-  --random-state 42 \
-  --log-dir logs
+  --random-state 42
 ```
 
 Relative output paths are kept under `output/`, so the example above writes:

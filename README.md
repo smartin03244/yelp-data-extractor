@@ -54,7 +54,9 @@ bash setup/install.sh
 
 The installer lets you choose an OS-default install location, a custom location,
 or a project-local `.venv`. It installs dependencies and creates a project-root
-`./yelp-data-extractor` launcher. See `setup/USER_GUIDE.md` for the quick guide.
+`./yelp-data-extractor` launcher. It also prepares `config/`, `logs/`, and
+`output/` under the selected application directory. See `setup/USER_GUIDE.md`
+for the quick guide.
 
 For development and testing, install the optional test dependency:
 
@@ -93,12 +95,10 @@ Run with explicit options:
 yelp-data-extractor \
   --businesses data/yelp_academic_dataset_business.json \
   --reviews data/yelp_academic_dataset_review.json \
-  --output output/yelp_balanced_reviews.csv \
-  --columns-config config/output_columns.json \
+  --output yelp_balanced_reviews.csv \
   --reviews-per-stratum 500 \
   --max-size-mb 30 \
-  --random-state 42 \
-  --log-dir logs
+  --random-state 42
 ```
 
 You can also run the entry point directly:
@@ -109,10 +109,10 @@ python main.py
 
 ## Output Files
 
-Generated CSV files are written to `output/` by default and are ignored by Git.
-Relative output paths are kept under `output/`; for example, `reviews.csv`
-becomes `output/reviews.csv`, and `exports/reviews.csv` becomes
-`output/exports/reviews.csv`.
+Generated CSV files are written to the application `output/` directory by
+default and are ignored by Git. Relative output paths are kept under `output/`;
+for example, `reviews.csv` becomes `output/reviews.csv`, and
+`exports/reviews.csv` becomes `output/exports/reviews.csv`.
 
 ## Output Schema
 

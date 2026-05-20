@@ -19,8 +19,9 @@ The pipeline:
   - `1-2 stars`
   - `3 stars`
   - `4-5 stars`
-- writes only the required output fields;
+- writes the output fields listed in `config/output_columns.json`;
 - verifies the final CSV size and lowers the per-stratum sample cap if needed.
+- writes runtime logs to `logs/yelp-data-extractor.log`.
 
 ## Why This Design
 
@@ -80,9 +81,11 @@ yelp-data-extractor \
   --businesses data/yelp_academic_dataset_business.json \
   --reviews data/yelp_academic_dataset_review.json \
   --output output/yelp_balanced_reviews.csv \
+  --columns-config config/output_columns.json \
   --reviews-per-stratum 500 \
   --max-size-mb 30 \
-  --random-state 42
+  --random-state 42 \
+  --log-dir logs
 ```
 
 You can also run the entry point directly:
@@ -91,9 +94,17 @@ You can also run the entry point directly:
 python main.py
 ```
 
+## Output Files
+
+Generated CSV files are written to `output/` by default and are ignored by Git.
+Relative output paths are kept under `output/`; for example, `reviews.csv`
+becomes `output/reviews.csv`, and `exports/reviews.csv` becomes
+`output/exports/reviews.csv`.
+
 ## Output Schema
 
-The generated CSV contains exactly these columns:
+The generated CSV columns are read from `config/output_columns.json`. The default
+config contains:
 
 ```text
 business_id
@@ -104,8 +115,16 @@ review_text
 review_date
 ```
 
-Generated output files are written to `output/` by default and are ignored by
-Git.
+Edit the `output_columns` list to choose a subset of the available fields or
+change their order. Unsupported column names fail with a clear error so typos do
+not silently produce blank output.
+
+## Logging
+
+Runtime logs are written to `logs/yelp-data-extractor.log` by default. The CLI
+prints concise success or error messages to the console, while detailed tracebacks
+are kept in the log file. Use `--log-level DEBUG` for more detail or
+`--log-dir another_directory` to choose a different log directory.
 
 ## Performance Note
 
@@ -143,5 +162,5 @@ git ls-files
 The pytest suite uses small temporary JSONL fixtures, so it does not need the
 full Yelp dataset.
 
-Do not commit raw Yelp data, generated CSV files, virtual environments, IDE
-metadata, or Python cache files.
+Do not commit raw Yelp data, generated CSV files, runtime logs, virtual
+environments, IDE metadata, or Python cache files.

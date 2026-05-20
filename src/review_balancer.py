@@ -1,3 +1,5 @@
+"""Review sampling utilities for balanced Yelp review exports."""
+
 import random
 from collections import defaultdict
 
@@ -40,6 +42,7 @@ class ReviewBalancer:
 
     @staticmethod
     def _validate_columns(df, required_columns):
+        """Raise a clear error when a DataFrame is missing required columns."""
         missing_columns = [column for column in required_columns if column not in df.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")

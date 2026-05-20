@@ -1,3 +1,5 @@
+"""Category mapping utilities for Yelp business records."""
+
 import re
 
 import pandas as pd

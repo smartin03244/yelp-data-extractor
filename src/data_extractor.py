@@ -1,3 +1,5 @@
+"""Streaming extraction logic for Yelp business and review JSONL files."""
+
 import json
 import logging
 from pathlib import Path

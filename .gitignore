@@ -3,6 +3,7 @@ data/*.json
 
 # Output files
 output/*
+logs/*
 
 # Python
 __pycache__/

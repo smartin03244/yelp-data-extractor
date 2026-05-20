@@ -1,15 +1,19 @@
+"""Regression tests for the yelp-data-extractor pipeline."""
+
 import csv
 import json
+from pathlib import Path
 
 import pytest
 
-from main import build_dataset
+from main import build_dataset, resolve_output_path
 from src.category_filter import CategoryFilter
 from src.data_extractor import DataExtractor
 from src.output_generator import OutputGenerator
 
 
 def write_jsonl(path, records):
+    """Write newline-delimited JSON records for pipeline tests."""
     with path.open('w', encoding='utf-8') as output_file:
         for record in records:
             output_file.write(json.dumps(record))
@@ -18,6 +22,7 @@ def write_jsonl(path, records):
 
 @pytest.fixture
 def sample_files(tmp_path):
+    """Create small Yelp-like business and review fixtures."""
     business_path = tmp_path / 'businesses.json'
     review_path = tmp_path / 'reviews.json'
 
@@ -74,7 +79,19 @@ def sample_files(tmp_path):
     return business_path, review_path
 
 
+@pytest.fixture
+def columns_config_path(tmp_path):
+    """Create a default output column config for tests."""
+    config_path = tmp_path / 'output_columns.json'
+    config_path.write_text(
+        json.dumps({'output_columns': OutputGenerator.DEFAULT_OUTPUT_COLUMNS}),
+        encoding='utf-8',
+    )
+    return config_path
+
+
 def test_category_filter_maps_known_categories():
+    """Known Yelp category strings should map to simplified labels."""
     category_filter = CategoryFilter()
 
     assert category_filter.categorize_business('Restaurants, Pizza') == 'Restaurants'
@@ -83,6 +100,7 @@ def test_category_filter_maps_known_categories():
 
 
 def test_data_extractor_streams_and_samples_matching_reviews(sample_files):
+    """The extractor should join, filter, and sample matching review rows."""
     business_path, review_path = sample_files
     extractor = DataExtractor(
         business_path=business_path,
@@ -103,7 +121,8 @@ def test_data_extractor_streams_and_samples_matching_reviews(sample_files):
     assert all(row['business_name'] in {'Sample Cafe', 'Sample Auto'} for row in rows)
 
 
-def test_build_dataset_writes_expected_csv(sample_files, tmp_path):
+def test_build_dataset_writes_expected_csv(sample_files, columns_config_path, tmp_path):
+    """The full build should write the default configured CSV schema."""
     business_path, review_path = sample_files
     output_path = tmp_path / 'balanced_reviews.csv'
 
@@ -111,6 +130,7 @@ def test_build_dataset_writes_expected_csv(sample_files, tmp_path):
         business_path=business_path,
         review_path=review_path,
         output_path=output_path,
+        columns_config_path=columns_config_path,
         reviews_per_stratum=2,
         max_size_mb=1,
         random_state=42,
@@ -130,7 +150,62 @@ def test_build_dataset_writes_expected_csv(sample_files, tmp_path):
     assert {row['category'] for row in rows} == {'Restaurants', 'Auto Repair & Service'}
 
 
-def test_build_dataset_rejects_invalid_sample_size(sample_files, tmp_path):
+def test_build_dataset_uses_configured_output_columns(sample_files, tmp_path):
+    """Custom output-column config should control CSV headers and values."""
+    business_path, review_path = sample_files
+    output_path = tmp_path / 'balanced_reviews.csv'
+    columns_config_path = tmp_path / 'custom_columns.json'
+    columns_config_path.write_text(
+        json.dumps({'output_columns': ['business_name', 'stars']}),
+        encoding='utf-8',
+    )
+
+    result = build_dataset(
+        business_path=business_path,
+        review_path=review_path,
+        output_path=output_path,
+        columns_config_path=columns_config_path,
+        reviews_per_stratum=2,
+        max_size_mb=1,
+        random_state=42,
+    )
+
+    with output_path.open('r', encoding='utf-8', newline='') as input_file:
+        reader = csv.DictReader(input_file)
+        rows = list(reader)
+
+    assert result['output_columns'] == ['business_name', 'stars']
+    assert reader.fieldnames == ['business_name', 'stars']
+    assert all(set(row) == {'business_name', 'stars'} for row in rows)
+
+
+def test_output_generator_rejects_invalid_column_config(tmp_path):
+    """Invalid column config should fail before writing output."""
+    config_path = tmp_path / 'invalid_columns.json'
+    config_path.write_text(json.dumps({'output_columns': []}), encoding='utf-8')
+
+    with pytest.raises(ValueError, match="non-empty 'output_columns' list"):
+        OutputGenerator(output_path=tmp_path / 'output.csv', columns_config_path=config_path)
+
+
+def test_output_generator_rejects_unsupported_columns(tmp_path):
+    """Unsupported configured columns should fail instead of writing blanks."""
+    config_path = tmp_path / 'unsupported_columns.json'
+    config_path.write_text(json.dumps({'output_columns': ['business_name', 'unknown']}), encoding='utf-8')
+
+    with pytest.raises(ValueError, match='unsupported columns: unknown'):
+        OutputGenerator(output_path=tmp_path / 'output.csv', columns_config_path=config_path)
+
+
+def test_resolve_output_path_puts_bare_filenames_in_output_directory():
+    """Relative output paths should be written under the output directory."""
+    assert resolve_output_path('reviews.csv') == Path('output/reviews.csv')
+    assert resolve_output_path('exports/reviews.csv') == Path('output/exports/reviews.csv')
+    assert resolve_output_path('output/reviews.csv') == Path('output/reviews.csv')
+
+
+def test_build_dataset_rejects_invalid_sample_size(sample_files, columns_config_path, tmp_path):
+    """The build should reject non-positive per-stratum limits."""
     business_path, review_path = sample_files
 
     with pytest.raises(ValueError, match='reviews_per_stratum must be greater than 0'):
@@ -138,11 +213,13 @@ def test_build_dataset_rejects_invalid_sample_size(sample_files, tmp_path):
             business_path=business_path,
             review_path=review_path,
             output_path=tmp_path / 'output.csv',
+            columns_config_path=columns_config_path,
             reviews_per_stratum=0,
         )
 
 
 def test_data_extractor_reports_missing_input_file(tmp_path):
+    """Missing input paths should raise clear file errors."""
     with pytest.raises(FileNotFoundError, match='Business data file not found'):
         DataExtractor(
             business_path=tmp_path / 'missing_businesses.json',
@@ -151,6 +228,7 @@ def test_data_extractor_reports_missing_input_file(tmp_path):
 
 
 def test_data_extractor_reports_invalid_review_stars(tmp_path):
+    """Invalid star values should include the source review line number."""
     business_path = tmp_path / 'businesses.json'
     review_path = tmp_path / 'reviews.json'
 

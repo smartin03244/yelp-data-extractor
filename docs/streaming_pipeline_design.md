@@ -22,7 +22,7 @@ The final output must:
 - preserve undersized strata without oversampling;
 - choose reviews randomly, not by position or manual selection;
 - write a UTF-8 CSV with a header row;
-- include exactly these columns:
+- read the output columns from `config/output_columns.json`, which defaults to:
 
 ```text
 business_id,business_name,category,stars,review_text,review_date
@@ -30,6 +30,7 @@ business_id,business_name,category,stars,review_text,review_date
 
 - verify the final file is under 30MB;
 - reduce the per-stratum limit proportionally if the file is too large.
+- write runtime logs to the configured log directory, `logs/` by default.
 
 ## High-Level Architecture
 
@@ -41,6 +42,7 @@ The current design is split into four responsibilities:
 | `src/data_extractor.py` | Loads target businesses and streams review records. |
 | `src/review_balancer.py` | Samples reviews per category/rating stratum. |
 | `src/output_generator.py` | Writes the final UTF-8 CSV and measures actual file size. |
+| `config/output_columns.json` | Defines which sampled row fields are written to the CSV. |
 | `main.py` | Orchestrates extraction, writing, and size-limit retries. |
 
 This keeps the code easy to reason about:
@@ -67,9 +69,11 @@ business_id -> {business_name, category}
    business lookup.
 6. If it matches, construct the final output-shaped row.
 7. Add the row to the reservoir sampler for its category/rating stratum.
-8. After streaming finishes, write sampled rows to CSV.
-9. Check the actual CSV file size.
-10. If the file is too large, lower the per-stratum cap and rerun.
+8. Read the configured output columns from `config/output_columns.json`.
+9. After streaming finishes, write sampled rows to CSV in the configured column
+   order. Relative output paths are resolved under `output/`.
+10. Check the actual CSV file size.
+11. If the file is too large, lower the per-stratum cap and rerun.
 
 ## Why Streaming Instead of a Full Pandas Merge
 
@@ -170,7 +174,8 @@ convenience.
 
 ## Output Contract
 
-The CSV writer enforces the final schema:
+The CSV writer reads the final schema from `config/output_columns.json`. The
+default config is:
 
 ```text
 business_id
@@ -182,8 +187,21 @@ review_date
 ```
 
 It uses `csv.DictWriter` with `extrasaction='ignore'`, so extra keys cannot leak
-into the deliverable. This is useful because upstream records may contain many
-additional Yelp fields that are not allowed in the final output.
+into the deliverable. The config is validated against the fields produced by the
+extractor, so unsupported column names fail clearly instead of producing blank
+cells. This lets users narrow or reorder the output without editing Python code.
+
+## Logging and Error Handling
+
+The CLI writes detailed runtime logs to a file. By default, logs are written to:
+
+```text
+logs/yelp-data-extractor.log
+```
+
+Expected operational failures, such as missing input files, invalid JSON, invalid
+column config, and output write errors, are logged with traceback details. The
+CLI prints a concise error message to stderr and exits with a nonzero status.
 
 ## Reproducibility
 
@@ -209,9 +227,11 @@ python main.py \
   --businesses data/yelp_academic_dataset_business.json \
   --reviews data/yelp_academic_dataset_review.json \
   --output output/yelp_balanced_reviews.csv \
+  --columns-config config/output_columns.json \
   --reviews-per-stratum 500 \
   --max-size-mb 30 \
-  --random-state 42
+  --random-state 42 \
+  --log-dir logs
 ```
 
 The command prints the output path, row count, final file size, and final

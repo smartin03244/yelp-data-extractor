@@ -1,26 +1,63 @@
+"""Command-line entry point for yelp-data-extractor."""
+
 import argparse
 import logging
 import math
+import sys
+from pathlib import Path
 
 from src.data_extractor import DataExtractor
 from src.output_generator import OutputGenerator
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_OUTPUT_DIR = Path('output')
+DEFAULT_LOG_DIR = Path('logs')
+DEFAULT_LOG_FILE = 'yelp-data-extractor.log'
 
 
-def configure_logging(log_level):
-    """Configure process-wide logging for the command-line interface."""
+def configure_logging(log_level, log_dir=DEFAULT_LOG_DIR, log_file=DEFAULT_LOG_FILE):
+    """Configure file logging for the command-line interface."""
+    log_dir = Path(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_file
+    formatter = logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s')
+
     logging.basicConfig(
         level=getattr(logging, log_level),
-        format='%(levelname)s:%(name)s:%(message)s',
+        handlers=[
+            logging.FileHandler(log_path, encoding='utf-8'),
+        ],
+        force=True,
     )
+
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
+
+    logger.debug("Logging configured at %s; writing logs to %s", log_level, log_path)
+    return log_path
+
+
+def resolve_output_path(output_path, output_dir=DEFAULT_OUTPUT_DIR):
+    """Return an output path that keeps relative exports under output_dir."""
+    output_path = Path(output_path)
+    output_dir = Path(output_dir)
+
+    if output_path.is_absolute():
+        return output_path
+
+    try:
+        output_path.relative_to(output_dir)
+    except ValueError:
+        return output_dir / output_path
+    return output_path
 
 
 def build_dataset(
     business_path,
     review_path,
     output_path,
+    columns_config_path=OutputGenerator.DEFAULT_COLUMNS_CONFIG_PATH,
     reviews_per_stratum=500,
     max_size_mb=30,
     random_state=42,
@@ -36,7 +73,15 @@ def build_dataset(
     if max_size_mb <= 0:
         raise ValueError("max_size_mb must be greater than 0")
 
+    output_path = Path(output_path)
     current_limit = reviews_per_stratum
+    logger.info(
+        "Starting yelp-data-extractor build: businesses=%s reviews=%s output=%s columns_config=%s",
+        business_path,
+        review_path,
+        output_path,
+        columns_config_path,
+    )
 
     while current_limit > 0:
         logger.info("Building dataset with %s reviews per stratum", current_limit)
@@ -48,7 +93,11 @@ def build_dataset(
         )
         rows, counts_by_stratum = extractor.extract_balanced_rows()
 
-        output = OutputGenerator(output_path=output_path, max_size_mb=max_size_mb)
+        output = OutputGenerator(
+            output_path=output_path,
+            max_size_mb=max_size_mb,
+            columns_config_path=columns_config_path,
+        )
         size_bytes = output.write_csv(rows)
 
         if output.is_under_size_limit():
@@ -59,6 +108,7 @@ def build_dataset(
                 'size_mb': output.size_mb(),
                 'reviews_per_stratum': current_limit,
                 'eligible_strata': len(counts_by_stratum),
+                'output_columns': output.output_columns,
             }
 
         reduction_factor = output.max_size_bytes / size_bytes
@@ -96,7 +146,12 @@ def parse_args():
     parser.add_argument(
         '--output',
         default='output/yelp_balanced_reviews.csv',
-        help="Destination CSV path",
+        help="Destination CSV path. Relative paths are written under output/",
+    )
+    parser.add_argument(
+        '--columns-config',
+        default=str(OutputGenerator.DEFAULT_COLUMNS_CONFIG_PATH),
+        help="JSON config file containing the output_columns list",
     )
     parser.add_argument(
         '--reviews-per-stratum',
@@ -122,6 +177,11 @@ def parse_args():
         default='INFO',
         help="Minimum logging level to display",
     )
+    parser.add_argument(
+        '--log-dir',
+        default=str(DEFAULT_LOG_DIR),
+        help="Directory where log files are written",
+    )
 
     return parser.parse_args()
 
@@ -129,26 +189,30 @@ def parse_args():
 def main():
     """Run the yelp-data-extractor command-line workflow."""
     args = parse_args()
-    configure_logging(args.log_level)
+    output_path = resolve_output_path(args.output)
+    log_path = configure_logging(args.log_level, log_dir=args.log_dir)
 
     try:
         result = build_dataset(
             business_path=args.businesses,
             review_path=args.reviews,
-            output_path=args.output,
+            output_path=output_path,
+            columns_config_path=args.columns_config,
             reviews_per_stratum=args.reviews_per_stratum,
             max_size_mb=args.max_size_mb,
             random_state=args.random_state,
         )
-    except Exception:
+    except (FileNotFoundError, PermissionError, ValueError, RuntimeError, OSError) as exc:
         logger.exception("Dataset build failed")
-        raise
+        print(f"Error: {exc}. See {log_path} for details.", file=sys.stderr)
+        return 1
     else:
         print(
             f"Wrote {result['row_count']} rows to {result['output_path']} "
             f"({result['size_mb']:.2f} MB, {result['reviews_per_stratum']} per stratum)."
         )
+        return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

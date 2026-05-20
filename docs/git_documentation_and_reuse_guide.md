@@ -11,6 +11,7 @@ Recommended files to commit:
 ```text
 .gitignore
 pyproject.toml
+config/output_columns.json
 main.py
 tests/test_pipeline.py
 src/__init__.py
@@ -29,6 +30,7 @@ Recommended files and directories to keep out of Git:
 data/yelp_academic_dataset_business.json
 data/yelp_academic_dataset_review.json
 output/
+logs/
 venv/
 __pycache__/
 *.pyc
@@ -89,6 +91,7 @@ files:
 ```text
 data/*.json
 output/*
+logs/*
 __pycache__/
 *.pyc
 venv/
@@ -190,7 +193,8 @@ subgroups rather than a purely proportional sample.
 
 ### Narrow Output Contracts
 
-The CSV writer emits exactly the required columns and drops everything else.
+The CSV writer reads its column list from `config/output_columns.json`, emits
+those fields in order, and drops everything else.
 
 Other applications:
 
@@ -202,6 +206,14 @@ Other applications:
 
 A narrow output contract makes the result predictable and lowers the risk of
 accidentally leaking unneeded data.
+
+### Runtime Logging
+
+The CLI writes logs to `logs/yelp-data-extractor.log` by default. Logs are useful
+for diagnosing missing files, invalid JSON, invalid column configuration, and
+CSV write failures without exposing full tracebacks in the console output.
+
+Generated logs should stay out of Git because they are runtime artifacts.
 
 ### Actual File-Size Verification
 
@@ -230,7 +242,7 @@ stream large event data
 filter early
 enrich with lookup
 sample or aggregate incrementally
-write a narrow output
+write a configured narrow output
 verify external constraints
 ```
 
@@ -250,6 +262,9 @@ Current coverage includes:
 - review rows are joined with the correct business name and simplified category;
 - each stratum respects the configured cap;
 - CSV output contains exactly the required columns;
+- custom output-column config controls CSV headers and order;
+- invalid output-column config fails clearly;
+- bare output filenames resolve under the `output/` directory;
 - invalid configuration is rejected;
 - missing input files are reported clearly;
 - invalid review star values include the source line number.

@@ -1,0 +1,10 @@
+{
+  "output_columns": [
+    "business_id",
+    "business_name",
+    "category",
+    "stars",
+    "review_text",
+    "review_date"
+  ]
+}

@@ -12,6 +12,8 @@ __pycache__/
 *.pyd
 .Python
 venv/
+.venv/
+yelp-data-extractor
 *.egg-info/
 /docs/yelp_data_extractor.docx
 

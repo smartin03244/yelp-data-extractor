@@ -8,7 +8,7 @@ The installer script:
 - creates the virtual environment in the selected location;
 - installs `yelp-data-extractor` and its dependencies;
 - installs development dependencies, including `pytest`;
-- creates a project-root symlink named `yelp-data-extractor`.
+- creates a project-root launcher named `yelp-data-extractor`.
 
 After setup, you can run the tool from the project root with:
 
@@ -68,7 +68,7 @@ INSTALL_DIR="$HOME/apps/yelp-data-extractor" bash setup/install.sh
 ```
 
 The script is safe to rerun. It reuses the existing virtual environment in the
-selected install location and refreshes the `./yelp-data-extractor` symlink.
+selected install location and refreshes the `./yelp-data-extractor` launcher.
 
 ## Run With Default Paths
 

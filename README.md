@@ -54,7 +54,7 @@ bash setup/install.sh
 
 The installer lets you choose an OS-default install location, a custom location,
 or a project-local `.venv`. It installs dependencies and creates a project-root
-`./yelp-data-extractor` symlink. See `setup/USER_GUIDE.md` for the quick guide.
+`./yelp-data-extractor` launcher. See `setup/USER_GUIDE.md` for the quick guide.
 
 For development and testing, install the optional test dependency:
 
